@@ -89,4 +89,7 @@ if __name__ == "__main__":
     
     #     print(f"Data for year {year} saved successfully.")
     
-        nfl.import_pbp_data([year], downcast=True).to_excel(f"data/play_by_play_data_{year}.xlsx", index=False)
+        # nfl.import_pbp_data([year], downcast=True).to_excel(f"data/play_by_play_data_{year}.xlsx", index=False)
+
+        nfl.import_team_desc().to_excel(f"data/team_desc.xlsx", index=False)
+        nfl.import_schedules([year]).to_excel(f"data/schedules_{year}.xlsx", index=False)
