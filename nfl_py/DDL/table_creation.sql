@@ -51,8 +51,7 @@ CREATE TABLE games (
 -- ============================================
 CREATE TABLE ngs_passing (
     passing_id          NUMBER PRIMARY KEY,
-    player_id           NUMBER NOT NULL,
-    game_id             NUMBER NOT NULL,
+    player_id           VARCHAR2(50) NOT NULL,
     attempts            NUMBER,
     completions         NUMBER,
     yards               NUMBER,
@@ -64,8 +63,7 @@ CREATE TABLE ngs_passing (
     passer_rating       NUMBER(5,2),
     season              NUMBER,
     week                NUMBER,
-    CONSTRAINT fk_pass_player FOREIGN KEY (player_id) REFERENCES players(player_id),
-    CONSTRAINT fk_pass_game FOREIGN KEY (game_id) REFERENCES games(game_id)
+    CONSTRAINT fk_pass_player FOREIGN KEY (player_id) REFERENCES players(gsis_id)
 );
 
 -- ============================================
@@ -73,8 +71,8 @@ CREATE TABLE ngs_passing (
 -- ============================================
 CREATE TABLE ngs_receiving (
     receiving_id        NUMBER PRIMARY KEY,
-    player_id           NUMBER NOT NULL,
-    game_id             NUMBER NOT NULL,
+    player_id           VARCHAR2(50) NOT NULL,
+    -- game_id             NUMBER NOT NULL,
     receptions          NUMBER,
     targets             NUMBER,
     yards               NUMBER,
@@ -85,8 +83,8 @@ CREATE TABLE ngs_receiving (
     catch_percent       NUMBER(5,2),
     season              NUMBER,
     week                NUMBER,
-    CONSTRAINT fk_recv_player FOREIGN KEY (player_id) REFERENCES players(player_id),
-    CONSTRAINT fk_recv_game FOREIGN KEY (game_id) REFERENCES games(game_id)
+    CONSTRAINT fk_recv_player FOREIGN KEY (player_id) REFERENCES players(gsis_id)
+    -- CONSTRAINT fk_recv_game FOREIGN KEY (game_id) REFERENCES games(game_id)
 );
 
 -- ============================================
@@ -94,8 +92,8 @@ CREATE TABLE ngs_receiving (
 -- ============================================
 CREATE TABLE ngs_rushing (
     rushing_id          NUMBER PRIMARY KEY,
-    player_id           NUMBER NOT NULL,
-    game_id             NUMBER NOT NULL,
+    player_id           VARCHAR2(50) NOT NULL,
+    -- game_id             NUMBER NOT NULL,
     carries             NUMBER,
     yards               NUMBER,
     touchdowns          NUMBER,
@@ -104,8 +102,8 @@ CREATE TABLE ngs_rushing (
     expected_yards      NUMBER,
     season              NUMBER,
     week                NUMBER,
-    CONSTRAINT fk_rush_player FOREIGN KEY (player_id) REFERENCES players(player_id),
-    CONSTRAINT fk_rush_game FOREIGN KEY (game_id) REFERENCES games(game_id)
+    CONSTRAINT fk_rush_player FOREIGN KEY (player_id) REFERENCES players(gsis_id)
+    -- CONSTRAINT fk_rush_game FOREIGN KEY (game_id) REFERENCES games(game_id)
 );
 
 -- ============================================
@@ -146,22 +144,62 @@ CREATE TABLE play_by_play (
 -- Weekly Team Data
 -- ============================================
 CREATE TABLE weekly_data (
-    weekly_id           NUMBER PRIMARY KEY,
-    game_id             NUMBER NOT NULL,
-    team                VARCHAR2(10) NOT NULL,
-    season              NUMBER,
-    week                NUMBER,
-    total_yards         NUMBER,
-    pass_yards          NUMBER,
-    rush_yards          NUMBER,
-    turnovers           NUMBER,
-    penalties           NUMBER,
-    possession_time     VARCHAR2(10),
-    points_scored       NUMBER,
-    points_allowed      NUMBER,
-    date_pulled         TIMESTAMP,
-    CONSTRAINT fk_weekly_game FOREIGN KEY (game_id) REFERENCES games(game_id)
+    player_id                VARCHAR2(20),
+    player_name              VARCHAR2(100),
+    player_display_name      VARCHAR2(100),
+    position                 VARCHAR2(10),
+    position_group           VARCHAR2(10),
+    headshot_url             VARCHAR2(500),
+    recent_team              VARCHAR2(10),
+    season                   NUMBER(4),
+    week                     NUMBER(2),
+    season_type              VARCHAR2(10),
+    opponent_team            VARCHAR2(10),
+    completions              NUMBER,
+    attempts                 NUMBER,
+    passing_yards            NUMBER,
+    passing_tds              NUMBER,
+    interceptions            NUMBER,
+    sacks                    NUMBER,
+    sack_yards               NUMBER,
+    sack_fumbles             NUMBER,
+    sack_fumbles_lost        NUMBER,
+    passing_air_yards        NUMBER,
+    passing_yards_after_catch NUMBER,
+    passing_first_downs      NUMBER,
+    passing_epa              NUMBER(9,6),
+    passing_2pt_conversions  NUMBER,
+    pacr                     NUMBER(9,6),
+    dakota                   NUMBER(9,6),
+    carries                  NUMBER,
+    rushing_yards            NUMBER,
+    rushing_tds              NUMBER,
+    rushing_fumbles          NUMBER,
+    rushing_fumbles_lost     NUMBER,
+    rushing_first_downs      NUMBER,
+    rushing_epa              NUMBER(9,6),
+    rushing_2pt_conversions  NUMBER,
+    receptions               NUMBER,
+    targets                  NUMBER,
+    receiving_yards          NUMBER,
+    receiving_tds            NUMBER,
+    receiving_fumbles        NUMBER,
+    receiving_fumbles_lost   NUMBER,
+    receiving_air_yards      NUMBER,
+    receiving_yards_after_catch NUMBER,
+    receiving_first_downs    NUMBER,
+    receiving_epa            NUMBER(9,6),
+    receiving_2pt_conversions NUMBER,
+    racr                     NUMBER(9,6),
+    target_share             NUMBER(9,6),
+    air_yards_share          NUMBER(9,6),
+    wopr                     NUMBER(9,6),
+    special_teams_tds        NUMBER,
+    fantasy_points           NUMBER(9,3),
+    fantasy_points_ppr       NUMBER(9,3),
+    CONSTRAINT weekly_data_pk PRIMARY KEY (player_id, season, week)
 );
+
 
 -- ============================================
 -- Weekly Roster Data
@@ -271,3 +309,419 @@ CREATE TABLE schedule (
 -- ============================================
 -- END OF SCRIPT
 -- ============================================
+
+grant select, insert, update, delete on players to wksp_bestbet;
+grant select, insert, update, delete on teams to wksp_bestbet;
+grant select, insert, update, delete on schedule to wksp_bestbet;
+grant select, insert, update, delete on games to wksp_bestbet;
+grant select, insert, update, delete on ngs_passing to wksp_bestbet;
+grant select, insert, update, delete on ngs_receiving to wksp_bestbet;
+grant select, insert, update, delete on ngs_rushing to wksp_bestbet;
+grant select, insert, update, delete on play_by_play to wksp_bestbet;
+grant select, insert, update, delete on weekly_data to wksp_bestbet;
+grant select, insert, update, delete on weekly_roster to wksp_bestbet;
+-- commit;
+with game_teams as (
+    select home_team, away_team, season, week
+    from admin.schedule
+    where game_id = :P2_GAME_ID
+)
+select p.* 
+from admin.ngs_passing p 
+join admin.players pl on p.player_id = pl.gsis_id
+join game_teams gt on pl.team in (gt.home_team, gt.away_team) and p.opponent_team in (gt.home_team, gt.away_team)
+
+Below are sample SQL snippets for each report (adjust bind variables, schemas, and field names as needed). They use only columns shown in your DDL. Replace :P_SEASON, :P_WEEK, :P_TEAM, :P_GAME_ID, :P_LOOKBACK with real values or bind variables.
+
+1. Market vs simple model (avg point diff) discrepancy (upcoming week)
+````sql
+-- Average point differential last N seasons vs current line
+with team_hist as (
+  select t.team_abbr team,
+         avg( case when s.home_team = t.team_abbr then (s.home_score - s.away_score)
+                   else (s.away_score - s.home_score) end ) avg_margin
+  from admin.teams t
+  join admin.schedule s
+    on (s.home_team = t.team_abbr or s.away_team = t.team_abbr)
+  where s.season between :P_SEASON - 3 and :P_SEASON - 1
+    and s.home_score is not null
+    and s.away_score is not null
+  group by t.team_abbr
+),
+games as (
+  select s.game_id,
+         s.season,
+         s.week,
+         s.home_team,
+         s.away_team,
+         s.spread_line,          -- usually home spread (- means home favored)
+         (spread_line * -1) as model_placeholder -- example placeholder
+  from admin.schedule s
+  where s.season = :P_SEASON
+    and s.week   = :P_WEEK
+)
+select g.game_id,
+       g.away_team,
+       g.home_team,
+       g.spread_line        as market_spread_home,
+       (h.avg_margin - a.avg_margin) as simple_model_edge,  -- positive => home projected edge
+       ( (h.avg_margin - a.avg_margin) - g.spread_line )    as discrepancy
+from games g
+left join team_hist h on h.team = g.home_team
+left join team_hist a on a.team = g.away_team
+order by abs((h.avg_margin - a.avg_margin) - g.spread_line) desc;
+````
+
+2. Pass Rate Over Expectation (neutral downs)
+````sql
+-- Neutral downs: quarters 1-3, score within 10, downs 1-2
+with plays as (
+  select season,
+         week,
+         offense_team,
+         case when play_type = 'PASS' then 1 else 0 end is_pass
+  from admin.play_by_play
+  where quarter between 1 and 3
+    and abs( (select home_score from admin.schedule s where s.game_id = play_by_play.game_id)
+             - (select away_score from admin.schedule s where s.game_id = play_by_play.game_id) ) <= 10
+    and down in (1,2)
+),
+league as (
+  select avg(is_pass) league_neutral_pass_rate
+  from plays
+)
+select season, week, offense_team,
+       avg(is_pass) team_neutral_pass_rate,
+       avg(is_pass) - (select league_neutral_pass_rate from league) as proe
+from plays
+group by season, week, offense_team
+order by season desc, week desc;
+````
+
+3. Explosive play differential (20+ pass / 10+ rush)
+````sql
+with base as (
+  select season,
+         week,
+         offense_team,
+         defense_team,
+         play_type,
+         yards_gained
+  from admin.play_by_play
+  where yards_gained is not null
+),
+explosive as (
+  select *,
+         case
+           when play_type = 'PASS' and yards_gained >= 20 then 1
+           when play_type = 'RUSH' and yards_gained >= 10 then 1
+           else 0
+         end is_explosive
+  from base
+),
+team_agg as (
+  select season, week, offense_team team,
+         sum(is_explosive) expl_plays,
+         count(*) total_plays,
+         sum(is_explosive)/nullif(count(*),0) expl_rate
+  from explosive
+  group by season, week, offense_team
+),
+def_agg as (
+  select season, week, defense_team team,
+         sum(is_explosive) expl_allowed,
+         count(*) plays_def,
+         sum(is_explosive)/nullif(count(*),0) expl_allowed_rate
+  from explosive
+  group by season, week, defense_team
+)
+select t.season, t.week, t.team,
+       t.expl_rate,
+       d.expl_allowed_rate,
+       (t.expl_rate - d.expl_allowed_rate) net_explosive_diff
+from team_agg t
+join def_agg d on d.season = t.season and d.week = t.week and d.team = t.team
+order by t.season desc, t.week desc, net_explosive_diff desc;
+````
+
+4. EPA per drive proxy (using weekly_data passing/rushing/receiving EPA sums)
+````sql
+select season,
+       week,
+       recent_team team,
+       (sum(passing_epa) + sum(rushing_epa) + sum(receiving_epa)) total_epa,
+       sum(passing_epa) passing_epa,
+       sum(rushing_epa) rushing_epa,
+       sum(receiving_epa) receiving_epa
+from admin.weekly_data
+group by season, week, recent_team
+order by season desc, week desc;
+````
+
+5. Pressure mismatch proxy (using sacks / attempts)
+````sql
+with team_pass as (
+  select season, week, recent_team team,
+         sum(attempts) attempts,
+         sum(sacks) sacks
+  from admin.weekly_data
+  group by season, week, recent_team
+),
+pressure as (
+  select season, week, team,
+         sacks,
+         attempts,
+         sacks / nullif(attempts + sacks,0) pressure_rate
+  from team_pass
+),
+next_week as (
+  select season, week, home_team, away_team
+  from admin.schedule
+  where season = :P_SEASON
+    and week   = :P_WEEK
+)
+select n.game_id,
+       n.home_team,
+       h.pressure_rate home_pressure_rate_allowed,
+       n.away_team,
+       a.pressure_rate away_pressure_rate_allowed,
+       (h.pressure_rate - a.pressure_rate) diff_home_minus_away
+from admin.schedule n
+left join pressure h on h.team = n.home_team and h.season = n.season and h.week = n.week - 1
+left join pressure a on a.team = n.away_team and a.season = n.season and a.week = n.week - 1
+where n.season = :P_SEASON
+  and n.week = :P_WEEK;
+````
+
+6. Early-down success & pace (success = gain >= ytg or touchdown)
+````sql
+with ed as (
+  select game_id,
+         offense_team,
+         season,
+         week,
+         case when (yards_gained >= ytg) or touchdown = 'Y' then 1 else 0 end success,
+         1 play_cnt
+  from admin.play_by_play
+  where down in (1,2)
+),
+team_ed as (
+  select season, week, offense_team team,
+         sum(success) successes,
+         count(*) plays,
+         sum(success)/nullif(count(*),0) success_rate
+  from ed
+  group by season, week, offense_team
+),
+pace as (
+  select season, week, offense_team team,
+         count(*) total_offensive_plays
+  from admin.play_by_play
+  group by season, week, offense_team
+)
+select p.season, p.week, p.team,
+       t.success_rate,
+       p.total_offensive_plays
+from pace p
+join team_ed t on t.season = p.season and t.week = p.week and t.team = p.team
+order by p.season desc, p.week desc, t.success_rate desc;
+````
+
+7. Rest / situational matrix
+````sql
+select season,
+       week,
+       game_id,
+       home_team,
+       away_team,
+       home_rest,
+       away_rest,
+       (home_rest - away_rest) rest_diff,
+       roof,
+       surface,
+       overtime
+from admin.schedule
+where season = :P_SEASON
+order by week, game_id;
+````
+
+8. Weather / surface impact on air yards (joining schedule with ngs_passing)
+````sql
+with pass_air as (
+  select p.season,
+         p.week,
+         pl.team,
+         sum(p.air_yards) air_yards,
+         sum(p.attempts) attempts
+  from admin.ngs_passing p
+  join admin.players pl on pl.gsis_id = p.player_id
+  group by p.season, p.week, pl.team
+),
+sched as (
+  select season, week, game_id, home_team, away_team, roof, surface, temp, wind
+  from admin.schedule
+  where season between :P_SEASON - :P_LOOKBACK and :P_SEASON
+)
+select s.season,
+       s.week,
+       s.roof,
+       s.surface,
+       s.temp,
+       s.wind,
+       t.team,
+       t.air_yards / nullif(t.attempts,0) avg_air_yards
+from sched s
+join pass_air t on t.season = s.season and t.week = s.week
+where t.team in (s.home_team, s.away_team);
+````
+
+9. Player receiving usage vs opponent defense allowance (last N weeks)
+````sql
+with recent_player as (
+  select r.player_id,
+         pl.full_name,
+         pl.team,
+         r.season,
+         r.week,
+         r.targets,
+         r.receptions,
+         r.yards
+  from admin.ngs_receiving r
+  join admin.players pl on pl.gsis_id = r.player_id
+  where r.season = :P_SEASON
+    and r.week between :P_WEEK - :P_LOOKBACK and :P_WEEK - 1
+),
+player_agg as (
+  select player_id,
+         full_name,
+         team,
+         avg(targets) avg_targets,
+         avg(receptions) avg_receptions,
+         avg(yards) avg_yards
+  from recent_player
+  group by player_id, full_name, team
+),
+def_allow as (
+  select r.season,
+         r.week,
+         d.team_def,
+         sum(r.yards) yards_allowed,
+         sum(r.targets) targets_allowed
+  from (
+     select n.week,
+            n.season,
+            case when pl.team = n.home_team then n.away_team else n.home_team end team_def,
+            r.targets,
+            r.yards
+     from admin.schedule n
+     join admin.ngs_receiving r
+       on r.season = n.season and r.week = n.week
+     join admin.players pl
+       on pl.gsis_id = r.player_id
+     where n.season = :P_SEASON
+       and n.week between :P_WEEK - :P_LOOKBACK and :P_WEEK - 1
+  ) r
+  group by r.season, r.week, r.team_def
+),
+def_agg as (
+  select team_def,
+         avg(yards_allowed) avg_recv_yards_allowed,
+         avg(targets_allowed) avg_targets_allowed
+  from def_allow
+  group by team_def
+)
+select pa.full_name,
+       pa.team,
+       pa.avg_targets,
+       pa.avg_receptions,
+       pa.avg_yards,
+       da.avg_recv_yards_allowed opponent_avg_yards_allowed
+from player_agg pa
+left join def_agg da on da.team_def <> pa.team
+order by pa.avg_targets desc fetch first 50 rows only;
+````
+
+10. Penalty differential
+````sql
+with pen as (
+  select season,
+         week,
+         offense_team team_off,
+         defense_team team_def,
+         penalty,
+         penalty_yards
+  from admin.play_by_play
+  where penalty = 'Y'
+),
+by_team as (
+  select season, week, team_off team,
+         count(*) penalties_for,
+         sum(penalty_yards) yards_for
+  from pen
+  group by season, week, team_off
+),
+against as (
+  select season, week, team_def team,
+         count(*) penalties_against,
+         sum(penalty_yards) yards_against
+  from pen
+  group by season, week, team_def
+)
+select f.season,
+       f.week,
+       f.team,
+       f.penalties_for,
+       a.penalties_against,
+       (f.penalties_for - a.penalties_against) net_penalties,
+       (f.yards_for - a.yards_against) net_penalty_yards
+from by_team f
+join against a on a.season = f.season and a.week = f.week and a.team = f.team
+order by f.season desc, f.week desc, net_penalty_yards asc;
+````
+
+11. Referee / crew tendencies (penalties per game)
+````sql
+with game_pen as (
+  select s.season,
+         s.week,
+         s.referee,
+         count(case when p.penalty = 'Y' then 1 end) penalties,
+         sum(case when p.penalty = 'Y' then p.penalty_yards else 0 end) yards
+  from admin.schedule s
+  left join admin.play_by_play p on p.game_id = s.game_id
+  group by s.season, s.week, s.referee
+),
+agg as (
+  select referee,
+         count(*) games,
+         sum(penalties) total_penalties,
+         sum(yards) total_yards,
+         sum(penalties)/nullif(count(*),0) avg_penalties_per_game,
+         sum(yards)/nullif(count(*),0) avg_penalty_yards_per_game
+  from game_pen
+  group by referee
+)
+select *
+from agg
+where games >= 5
+order by avg_penalties_per_game desc;
+````
+
+12. Closing line value approximation (compare spread to actual margin)
+````sql
+select season,
+       week,
+       game_id,
+       home_team,
+       away_team,
+       spread_line,  -- assumed closing
+       (home_score - away_score) as actual_margin,
+       ((home_score - away_score) - spread_line) as clv_margin  -- positive = beat market
+from admin.schedule
+where season between :P_SEASON - 3 and :P_SEASON
+  and home_score is not null
+  and away_score is not null
+order by season desc, week desc;
+````
+
+Need adaptations (e.g., windowing, limiting seasons)? Specify and I can refine.
