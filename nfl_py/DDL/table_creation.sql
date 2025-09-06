@@ -200,6 +200,25 @@ CREATE TABLE weekly_data (
     CONSTRAINT weekly_data_pk PRIMARY KEY (player_id, season, week)
 );
 
+alter table weekly_data add (
+    game_id varchar2(50)
+)
+
+-- alter table weekly_data drop column game_id;
+
+update weekly_data wd
+set wd.game_id = (
+    select game_id 
+      from schedule s
+        where s.season = wd.season
+        and s.week = wd.week
+        and (s.home_team = wd.recent_team 
+        and s.away_team = wd.opponent_team
+          or s.home_team = wd.opponent_team
+            and s.away_team = wd.recent_team)
+)
+where wd.game_id is null;
+
 
 -- ============================================
 -- Weekly Roster Data
@@ -724,4 +743,190 @@ where season between :P_SEASON - 3 and :P_SEASON
 order by season desc, week desc;
 ````
 
-Need adaptations (e.g., windowing, limiting seasons)? Specify and I can refine.
+
+
+select
+    s.game_id,
+    s.home_team,
+    s.away_team,
+    -- a subitle to show the odds for the game
+    case when s.away_moneyline > 0 then '+' || s.away_moneyline else to_char(s.away_moneyline) end as away_moneyline,
+    case when s.home_moneyline > 0 then '+' || s.home_moneyline else to_char(s.home_moneyline) end as home_moneyline,
+    trim(to_char(s.gameday,'Day')) || ' ' || to_char(to_date(s.gametime,'HH24:MI'),'FMHH:MI PM') as gametime, 
+    h.team_logo_squared as home_logo,
+    a.team_logo_squared as away_logo
+from
+    admin.schedule s
+join admin.teams h on h.team_abbr = s.home_team
+join admin.teams a on a.team_abbr = s.away_team
+where 
+    s.season = 2025
+  and s.week = 1
+order by
+    s.gameday, s.gametime;
+/
+
+-- Bind: :P_GAME_ID
+with game as (
+    select game_id, season, week, home_team, away_team
+    from admin.schedule
+    where game_id = :P_GAME_ID
+),
+lb as (
+    select season,
+           week,
+           home_team,
+           away_team,
+           greatest(1, week - 6) start_week
+    from game
+),
+def_game_yards as (
+    -- Each row = what a defense (opponent_team) allowed in a given week
+    select wd.season,
+           wd.week,
+           wd.opponent_team  as defense_team,
+           sum(wd.passing_yards)   passing_yards_allowed,
+           sum(wd.rushing_yards)   rushing_yards_allowed,
+           sum(wd.receiving_yards) receiving_yards_allowed
+    from admin.weekly_data wd
+    join game g on g.season = wd.season
+    where wd.week between (select start_week from lb) and (select week-1 from game)
+      and wd.opponent_team in ( (select home_team from game),
+                                (select away_team from game) )
+    group by wd.season, wd.week, wd.opponent_team
+),
+agg as (
+    select defense_team,
+           count(*) games,
+           sum(passing_yards_allowed)   pass_yards_total,
+           sum(rushing_yards_allowed)   rush_yards_total,
+           sum(receiving_yards_allowed) recv_yards_total,
+           round(sum(passing_yards_allowed)/nullif(count(*),0),1)   pass_yards_per_game,
+           round(sum(rushing_yards_allowed)/nullif(count(*),0),1)   rush_yards_per_game,
+           round(sum(receiving_yards_allowed)/nullif(count(*),0),1) recv_yards_per_game
+    from def_game_yards
+    group by defense_team
+)
+select case
+         when defense_team = (select home_team from game) then 'HOME'
+         else 'AWAY'
+       end side,
+       defense_team           team,
+       games,
+       pass_yards_total,
+       pass_yards_per_game,
+       rush_yards_total,
+       rush_yards_per_game,
+       recv_yards_total,
+       recv_yards_per_game
+from agg
+order by side;
+
+
+/
+
+with teams as (
+    select game_id, season, week, home_team, away_team, gameday
+    from admin.schedule
+    where game_id = :P_GAME_ID
+),
+home_team_games as (
+    select s.game_id, s.season, s.week, s.home_team, s.away_team, t.home_team as team
+    from admin.schedule s
+    join teams t on (t.home_team = s.home_team or t.home_team = s.away_team)
+    where s.gameday <= (select gameday from teams)
+      and game_type = 'REG'
+    order by s.gameday desc, s.gametime desc
+    fetch first 6 rows only
+), 
+away_team_games as (
+    select s.game_id, s.season, s.week, s.home_team, s.away_team, t.away_team as team
+    from admin.schedule s
+    join teams t on (t.away_team = s.home_team or t.away_team = s.away_team)
+    where s.gameday <= (select gameday from teams)
+      and game_type = 'REG'
+    order by s.gameday desc, s.gametime desc
+    fetch first 6 rows only
+), recent_games as (
+    select * from home_team_games
+    union all
+    select * from away_team_games
+),
+team_game_stats as (
+    select rg.team,
+           rg.game_id,
+           sum(wd.passing_yards)    passing_yards,
+           sum(wd.rushing_yards)    rushing_yards,
+           sum(wd.receiving_yards)  receiving_yards,
+           sum(wd.passing_tds)      passing_tds,
+           sum(wd.rushing_tds)      rushing_tds,
+           sum(wd.receiving_tds)    receiving_tds
+    from recent_games rg
+    join admin.weekly_data wd
+      on wd.game_id = rg.game_id
+     and wd.opponent_team = rg.team
+    group by rg.team, rg.game_id
+)
+select team,
+       round(avg(passing_yards),1)      avg_passing_yards_allowed,
+       round(avg(rushing_yards),1)      avg_rushing_yards_allowed,
+       round(avg(receiving_yards),1)    avg_receiving_yards_allowed,
+       round(avg(passing_tds),2)        avg_passing_tds_allowed,
+       round(avg(rushing_tds),2)        avg_rushing_tds_allowed,
+       round(avg(receiving_tds),2)      avg_receiving_tds_allowed
+from team_game_stats
+group by team
+order by team;
+
+-- last 6 games against each other
+with game as (
+    select game_id, season, week, home_team, away_team, gameday
+    from admin.schedule
+    where game_id = :P2_GAME_ID
+),
+recent_games as (
+    select s.game_id, s.season, s.week, s.home_team, s.away_team
+    from admin.schedule s
+    join game g on (g.home_team = s.home_team and g.away_team = s.away_team)
+                  or (g.home_team = s.away_team and g.away_team = s.home_team)
+    where s.gameday < (select gameday from game)
+      and s.game_type = 'REG'
+    order by s.gameday desc, s.gametime desc
+    fetch first 6 rows only
+)
+select rg.game_id,
+       rg.season,
+       rg.week,
+       rg.home_team,
+       rg.away_team,
+       (select home_score from admin.schedule s where s.game_id = rg.game_id) as home_score,
+       (select away_score from admin.schedule s where s.game_id = rg.game_id) as away_score,
+       sum(case when wd.opponent_team = rg.home_team then wd.passing_yards else 0 end) as passing_yards_away,
+       sum(case when wd.opponent_team = rg.away_team then wd.passing_yards else 0 end) as passing_yards_home,
+       sum(case when wd.opponent_team = rg.home_team then wd.rushing_yards else 0 end) as rushing_yards_away,
+       sum(case when wd.opponent_team = rg.away_team then wd.rushing_yards else 0 end) as rushing_yards_home,
+       sum(case when wd.opponent_team = rg.home_team then wd.passing_tds else 0 end) as passing_tds_away,
+       sum(case when wd.opponent_team = rg.away_team then wd.passing_tds else 0 end) as passing_tds_home,
+       sum(case when wd.opponent_team = rg.home_team then wd.rushing_tds else 0 end) as rushing_tds_away,
+       sum(case when wd.opponent_team = rg.away_team then wd.rushing_tds else 0 end) as rushing_tds_home,
+       sum(case when wd.opponent_team = rg.home_team then wd.attempts else 0 end) as passing_attempts_away,
+       sum(case when wd.opponent_team = rg.away_team then wd.attempts else 0 end) as passing_attempts_home,
+       sum(case when wd.opponent_team = rg.home_team then wd.carries else 0 end) as rushing_attempts_away,
+       sum(case when wd.opponent_team = rg.away_team then wd.carries else 0 end) as rushing_attempts_home,
+       sum(case when wd.opponent_team = rg.home_team then wd.completions else 0 end) as completions_away,
+       sum(case when wd.opponent_team = rg.away_team then wd.completions else 0 end) as completions_home
+
+       ht.primary_color home_color,
+       at.primary_color away_color
+from recent_games rg
+join admin.weekly_data wd on wd.game_id = rg.game_id
+join admin.teams ht on ht.team_abbr = rg.home_team
+join admin.teams at on at.team_abbr = rg.away_team
+where wd.opponent_team in (rg.home_team, rg.away_team)
+group by rg.game_id,
+       rg.season,
+       rg.week,
+       rg.home_team,
+       rg.away_team
+order by rg.season desc, rg.week desc
+
